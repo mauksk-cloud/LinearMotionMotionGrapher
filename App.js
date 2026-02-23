@@ -71,11 +71,10 @@ function smooth(value) {
     return smoothBuffer.reduce((a,b)=>a+b)/smoothBuffer.length;
 }
 
-function processVideo() {
-    if (!cv || !cv.aruco) {
-        requestAnimationFrame(processVideo);
-        return;
-    }
+if (typeof cv === "undefined" || typeof cv.aruco === "undefined") {
+    requestAnimationFrame(processVideo);
+    return;
+}
 
     overlay.width = video.videoWidth;
     overlay.height = video.videoHeight;
