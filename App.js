@@ -1,3 +1,4 @@
+let maxTimeInput = document.getElementById("maxTime");
 let video = document.getElementById("video");
 let overlay = document.getElementById("overlay");
 let ctx = overlay.getContext("2d");
@@ -26,14 +27,22 @@ let chart = new Chart(document.getElementById("chart"), {
         datasets: [{
             label: 'Distance (cm)',
             data: [],
-            fill: false
+            borderWidth: 2,
+            pointRadius: 0
         }]
     },
     options: {
         animation: false,
+        responsive: true,
         scales: {
-            x: { title: { display: true, text: "Time (s)" }},
-            y: { title: { display: true, text: "Distance (cm)" }}
+            x: {
+                title: { display: true, text: "Time (s)" },
+                grid: { display: true }
+            },
+            y: {
+                title: { display: true, text: "Distance (cm)" },
+                grid: { display: true }
+            }
         }
     }
 });
