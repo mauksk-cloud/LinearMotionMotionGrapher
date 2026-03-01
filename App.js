@@ -75,37 +75,32 @@ function smooth(value) {
 }
 
 function processVideo() {
-
-    if (typeof cv === "undefined" || typeof cv.aruco === "undefined") {
-        requestAnimationFrame(processVideo);
-        return;
-    }
-
     overlay.width = video.videoWidth;
     overlay.height = video.videoHeight;
 
-    let src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
-    let cap = new cv.VideoCapture(video);
-    cap.read(src);
+    ctx.drawImage(video, 0, 0, overlay.width, overlay.height);
+    let imageData = ctx.getImageData(0, 0, overlay.width, overlay.height);
 
-    let gray = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    let markers = detector.detect(imageData);
 
-    let dictionary = new cv.aruco.Dictionary(cv.aruco.DICT_4X4_50);
-    let parameters = new cv.aruco.DetectorParameters();
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-    let corners = new cv.MatVector();
-    let ids = new cv.Mat();
+    if (markers.length > 0) {
+        let corners = markers[0].corners;
 
-    cv.aruco.detectMarkers(gray, dictionary, corners, ids, parameters);
+        // Draw box around marker
+        ctx.strokeStyle = "lime";
+        ctx.beginPath();
+        corners.forEach((c, i) => {
+            i === 0 ? ctx.moveTo(c.x, c.y) : ctx.lineTo(c.x, c.y);
+        });
+        ctx.closePath();
+        ctx.stroke();
 
-    ctx.clearRect(0,0,overlay.width,overlay.height);
-
-    if (ids.rows > 0) {
-        let corner = corners.get(0);
+        // Calculate width in pixels
         let widthPixels = Math.hypot(
-            corner.data32F[0] - corner.data32F[2],
-            corner.data32F[1] - corner.data32F[3]
+            corners[0].x - corners[1].x,
+            corners[0].y - corners[1].y
         );
 
         if (focalLength) {
@@ -114,8 +109,7 @@ function processVideo() {
             distanceDisplay.innerText = "Distance: " + distance.toFixed(1) + " cm";
 
             if (recording) {
-                let t = (Date.now() - startTime)/1000;
-
+                let t = (Date.now() - startTime) / 1000;
                 if (t >= parseFloat(maxTimeInput.value)) {
                     recording = false;
                     alert("Recording complete.");
@@ -123,26 +117,13 @@ function processVideo() {
                     chart.data.labels.push(t.toFixed(2));
                     chart.data.datasets[0].data.push(distance.toFixed(1));
                     chart.update();
-                    data.push([t,distance]);
+                    data.push([t, distance]);
                 }
             }
         }
-
-        ctx.strokeStyle = "lime";
-        ctx.beginPath();
-        for (let i=0; i<4; i++) {
-            ctx.lineTo(corner.data32F[i*2], corner.data32F[i*2+1]);
-        }
-        ctx.closePath();
-        ctx.stroke();
     } else {
         distanceDisplay.innerText = "Marker Not Detected";
     }
-
-    src.delete(); 
-    gray.delete(); 
-    corners.delete(); 
-    ids.delete();
 
     requestAnimationFrame(processVideo);
 }
