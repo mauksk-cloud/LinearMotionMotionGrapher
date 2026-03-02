@@ -13,6 +13,7 @@ let startBtn = document.getElementById("startBtn");
 let stopBtn = document.getElementById("stopBtn");
 let clearBtn = document.getElementById("clearBtn");
 let exportBtn = document.getElementById("exportBtn");
+let lastRecordTime = 0;
 
 let focalLength = null;
 let recording = false;
@@ -113,11 +114,12 @@ function processVideo() {
                 if (t >= parseFloat(maxTimeInput.value)) {
                     recording = false;
                     alert("Recording complete.");
-                } else {
-                    chart.data.labels.push(t.toFixed(2));
-                    chart.data.datasets[0].data.push(distance.toFixed(1));
+                } else if (t - lastRecordTime >= 0.05) {  // record every 50ms = 20 samples/sec
+                    lastRecordTime = t;
+                    chart.data.labels.push(parseFloat(t.toFixed(2)));
+                    chart.data.datasets[0].data.push(parseFloat(distance.toFixed(1)));
                     chart.update();
-                    data.push([t, distance]);
+                    data.push([t, parseFloat(distance.toFixed(1))]);
                 }
             }
         }
