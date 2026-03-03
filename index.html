@@ -2,59 +2,449 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Embodied Motion Graph</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Motion Grapher</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="cv.js"></script>
   <script src="aruco.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --accent: #00e5ff;
+      --accent2: #ff4081;
+      --text: #e8eaf6;
+      --muted: #7986cb;
+      --success: #69f0ae;
+      --border: #2e3356;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      padding: 0 0 60px 0;
+    }
+
+    /* ── HEADER ── */
+    header {
+      background: var(--surface);
+      border-bottom: 2px solid var(--accent);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 {
+      font-family: 'Space Mono', monospace;
+      font-size: 1.2rem;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+    .status-dot.active { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .status-dot.recording { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* ── MAIN LAYOUT ── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 16px;
+      padding: 16px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* ── VIDEO PANEL ── */
+    .video-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .video-wrapper {
+      position: relative;
+      background: #000;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 2px solid var(--border);
+      aspect-ratio: 4/3;
+    }
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    #overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    .distance-badge {
+      position: absolute;
+      bottom: 10px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.75);
+      border: 1px solid var(--accent);
+      border-radius: 20px;
+      padding: 4px 16px;
+      font-family: 'Space Mono', monospace;
+      font-size: 1rem;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .camera-placeholder {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem;
+    }
+    .camera-icon { font-size: 2.5rem; opacity: 0.4; }
+
+    /* ── CAMERA BUTTON ── */
+    #cameraBtn {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    #cameraBtn:hover { opacity: 0.85; }
+    #cameraBtn:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── RECORDING CONTROLS ── */
+    .record-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .btn {
+      padding: 10px 12px;
+      border: none;
+      border-radius: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-transform: uppercase;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn-start { background: var(--success); color: #000; grid-column: span 2; }
+    .btn-stop  { background: var(--accent2); color: #fff; }
+    .btn-clear { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-export { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── CHART PANEL ── */
+    .chart-panel {
+      background: var(--surface);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .chart-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .toggle {
+      position: relative;
+      width: 40px; height: 22px;
+    }
+    .toggle input { display: none; }
+    .toggle-slider {
+      position: absolute; inset: 0;
+      background: var(--surface2);
+      border-radius: 11px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      transition: 0.2s;
+    }
+    .toggle-slider:before {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      left: 2px; top: 2px;
+      background: var(--muted);
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+    .toggle input:checked + .toggle-slider { background: var(--accent); border-color: var(--accent); }
+    .toggle input:checked + .toggle-slider:before { transform: translateX(18px); background: #000; }
+
+    .chart-container { position: relative; flex: 1; min-height: 280px; }
+
+    /* ── SMOOTHING ROW ── */
+    .smooth-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .smooth-row input[type=range] {
+      flex: 1;
+      accent-color: var(--accent);
+    }
+    #smoothVal {
+      font-family: 'Space Mono', monospace;
+      color: var(--accent);
+      min-width: 16px;
+      text-align: right;
+    }
+
+    /* ── DIVIDER ── */
+    .section-divider {
+      max-width: 1400px;
+      margin: 24px auto 0;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .section-divider::before, .section-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── BOTTOM SETTINGS ── */
+    .settings-grid {
+      max-width: 1400px;
+      margin: 16px auto 0;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .settings-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+    }
+    .settings-card h3 {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 12px;
+    }
+    .field label {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .field input[type=number] {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85rem;
+      width: 100%;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .field input[type=number]:focus { border-color: var(--accent); }
+    .btn-calibrate {
+      width: 100%;
+      padding: 10px;
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      border-radius: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem;
+      letter-spacing: 1px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+      margin-top: 4px;
+    }
+    .btn-calibrate:hover { background: var(--accent); color: #000; }
+
+    /* instructions */
+    .instructions ol {
+      padding-left: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .instructions li {
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .instructions li strong { color: var(--text); }
+
+    /* calibrated indicator */
+    .cal-status {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      margin-top: 8px;
+      color: var(--muted);
+    }
+    .cal-status.ok { color: var(--success); }
+  </style>
 </head>
 <body>
 
-<button id="cameraBtn">Start Camera</button>
+<header>
+  <div class="status-dot" id="statusDot"></div>
+  <h1>Motion Grapher</h1>
+</header>
 
-  <h2>Embodied Motion Graph</h2>
-<p>
-1. Allow camera<br>
-2. Enter marker size<br>
-3. Calibrate at known distance<br>
-4. Press Start Recording<br>
-5. Move toward/away from camera
-</p>
+<!-- ══ TOP: MAIN CONTROLS ══ -->
+<div class="main-grid">
 
-<div class="container">
+  <!-- LEFT: Video + controls -->
+  <div class="video-panel">
+    <div class="video-wrapper" id="videoWrapper">
+      <div class="camera-placeholder" id="cameraPlaceholder">
+        <div class="camera-icon">📷</div>
+        <span>Camera not started</span>
+      </div>
+      <video id="video" autoplay playsinline style="display:none"></video>
+      <canvas id="overlay"></canvas>
+      <div class="distance-badge" id="distanceDisplay">Distance: -- ft</div>
+    </div>
 
-  <div class="left">
-    <video id="video" autoplay playsinline></video>
-    <canvas id="overlay"></canvas>
-    <h3 id="distanceDisplay">Distance: -- cm</h3>
+    <button class="btn" id="cameraBtn">▶ Start Camera</button>
+
+    <div class="record-controls">
+      <button class="btn btn-start" id="startBtn">⬤ Start Recording</button>
+      <button class="btn btn-stop"  id="stopBtn">■ Stop</button>
+      <button class="btn btn-clear" id="clearBtn">↺ Clear Data</button>
+      <button class="btn btn-export" id="exportBtn">↓ Export CSV</button>
+    </div>
   </div>
 
-  <div class="right">
-
-    <label>Marker Size (cm):</label>
-    <input type="number" id="markerSize" value="10">
-
-    <label>Calibration Distance (cm):</label>
-    <input type="number" id="calibrationDistance" value="50">
-    <label>Max Recording Time (seconds):</label>
-    <input type="number" id="maxTime" value="10">
-    <button id="calibrateBtn">Calibrate</button>
-
-    <hr>
-
-    <button id="startBtn">Start Recording</button>
-    <button id="stopBtn">Stop Recording</button>
-    <button id="clearBtn">Clear Data</button>
-    <button id="exportBtn">Export CSV</button>
-
-    <label>Smoothing (samples):</label>
-    <input type="range" id="smoothSlider" min="1" max="10" value="5">
-
-    <canvas id="chart"></canvas>
-
+  <!-- RIGHT: Chart -->
+  <div class="chart-panel">
+    <div class="chart-header">
+      <span class="chart-title">Distance vs. Time</span>
+      <div class="toggle-wrap">
+        <span>Auto-scale Y</span>
+        <label class="toggle">
+          <input type="checkbox" id="autoScaleToggle">
+          <span class="toggle-slider"></span>
+        </label>
+        <span>Fixed (0–10 ft)</span>
+      </div>
+    </div>
+    <div class="chart-container">
+      <canvas id="chart"></canvas>
+    </div>
+    <div class="smooth-row">
+      <span>Smoothing</span>
+      <input type="range" id="smoothSlider" min="1" max="15" value="5">
+      <span id="smoothVal">5</span>
+    </div>
   </div>
+
 </div>
-  
+
+<!-- ══ BOTTOM: SETTINGS / CALIBRATION / INSTRUCTIONS ══ -->
+<div class="section-divider">Settings &amp; Calibration</div>
+
+<div class="settings-grid">
+
+  <!-- Calibration -->
+  <div class="settings-card">
+    <h3>Calibration</h3>
+    <div class="field">
+      <label>Marker Size (cm) — measure your printed marker</label>
+      <input type="number" id="markerSize" value="20">
+    </div>
+    <div class="field">
+      <label>Calibration Distance (cm) — how far you'll stand</label>
+      <input type="number" id="calibrationDistance" value="100">
+    </div>
+    <button class="btn-calibrate" id="calibrateBtn">Set Calibration</button>
+    <div class="cal-status" id="calStatus">Not calibrated</div>
+  </div>
+
+  <!-- Recording settings -->
+  <div class="settings-card">
+    <h3>Recording Settings</h3>
+    <div class="field">
+      <label>Max Recording Time (seconds)</label>
+      <input type="number" id="maxTime" value="10">
+    </div>
+  </div>
+
+  <!-- Instructions -->
+  <div class="settings-card instructions">
+    <h3>How To Use</h3>
+    <ol>
+      <li><strong>Start Camera</strong> and allow permission when asked</li>
+      <li>Print an <strong>Original ArUco marker</strong> (20–25 cm works best up to 10 ft)</li>
+      <li>Enter your marker size and stand at your calibration distance, then click <strong>Set Calibration</strong></li>
+      <li>Press <strong>Start Recording</strong>, then move toward or away from the camera</li>
+      <li>Press <strong>Stop</strong>, then <strong>Export CSV</strong> to save your data</li>
+    </ol>
+  </div>
+
+</div>
+
 <script src="App.js"></script>
 </body>
 </html>
