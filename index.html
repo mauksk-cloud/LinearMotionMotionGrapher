@@ -168,13 +168,16 @@
     }
     #arrowCanvas { width: 100%; max-width: 180px; flex-shrink: 0; }
     #slopeReadout {
-      font-family: 'Space Mono', monospace; font-size: 1.4rem; font-weight: 700;
+      font-family: 'Space Mono', monospace; font-size: 2rem; font-weight: 700;
       text-align: center; line-height: 1;
     }
     #slopeReadout.pos  { color: var(--slope-pos); }
     #slopeReadout.neg  { color: var(--slope-neg); }
     #slopeReadout.zero { color: var(--slope-zero); }
-    #slopeDirLabel { font-family: 'Space Mono', monospace; font-size: 0.5rem; color: var(--muted); text-align: center; letter-spacing: 1px; text-transform: uppercase; }
+    #slopeDirLabel {
+      font-family: 'Space Mono', monospace; font-size: 0.75rem; font-weight: 700;
+      color: var(--text); text-align: center; letter-spacing: 1px; text-transform: uppercase;
+    }
 
     /* ── FUNCTION BOX ── */
     #fnBox {

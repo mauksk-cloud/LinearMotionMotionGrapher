@@ -106,7 +106,10 @@ document.querySelectorAll('.fn-clear-btn').forEach(btn => {
 // ════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════
-let focalLength         = 750;   // default: 20cm marker at 100cm = 150px → 750
+// Calibration: 20cm marker at 100cm measured ~150px, but distance was reading 2.6ft (79cm)
+// instead of 3.28ft (100cm). Correction factor: 100/79.2 = 1.263
+// Corrected focalLength = 750 * 1.263 ≈ 947
+let focalLength         = 947;
 let lastKnownPixelWidth = null;
 let recording           = false;
 let countingDown        = false;
@@ -189,26 +192,44 @@ const chart = new Chart(document.getElementById("chart"), {
         scales: {
             x: {
                 type: 'linear',
-                title: { display: true, text: "Time (s)", color: '#7986cb' },
+                title: {
+                    display: true, text: "Time (s)", color: '#ffffff',
+                    font: { family: 'Space Mono', size: 13, weight: 'bold' }
+                },
                 ticks: {
-                    color: '#7986cb', font: { family: 'Space Mono', size: 10 },
-                    stepSize: 0.25,
-                    callback: v => (Math.round(v * 4) === v * 4) ? v.toFixed(2) : null
+                    color: '#ffffff',
+                    font: { family: 'Space Mono', size: 12, weight: 'bold' },
+                    stepSize: 0.5,
+                    // Show label only at 0.5s intervals; format as clean integers or single decimal
+                    callback: v => {
+                        if (Math.round(v * 2) !== v * 2) return null;  // only at 0.5 multiples
+                        // Show as integer if whole number, else one decimal
+                        return Number.isInteger(v) ? String(v) : v.toFixed(1);
+                    }
                 },
                 grid: {
-                    color: c => Number.isInteger(c.tick.value) ? 'rgba(100,120,200,0.45)' : 'rgba(46,51,86,0.9)',
-                    lineWidth: c => Number.isInteger(c.tick.value) ? 1.5 : 0.7
+                    // Gridline at every 0.25s — but label only at 0.5s (handled by callback above)
+                    color: c => Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.55)' : 'rgba(100,120,200,0.35)',
+                    lineWidth: c => Number.isInteger(c.tick.value) ? 2 : 1
                 },
                 min: 0, max: 5
             },
             y: {
-                title: { display: true, text: "Distance (ft)", color: '#7986cb' },
-                ticks: { color: '#7986cb', font: { family: 'Space Mono', size: 10 }, stepSize: 1 },
-                grid: {
-                    color: c => Number.isInteger(c.tick.value) ? 'rgba(100,120,200,0.45)' : 'rgba(46,51,86,0.9)',
-                    lineWidth: c => Number.isInteger(c.tick.value) ? 1.5 : 0.7
+                title: {
+                    display: true, text: "Distance (ft)", color: '#ffffff',
+                    font: { family: 'Space Mono', size: 13, weight: 'bold' }
                 },
-                min: 0, max: 15
+                ticks: {
+                    color: '#ffffff',
+                    font: { family: 'Space Mono', size: 12, weight: 'bold' },
+                    stepSize: 1,
+                    callback: v => Number.isInteger(v) ? String(v) : null
+                },
+                grid: {
+                    color: c => Number.isInteger(c.tick.value) ? 'rgba(160,180,255,0.55)' : 'rgba(100,120,200,0.2)',
+                    lineWidth: c => Number.isInteger(c.tick.value) ? 2 : 0.8
+                },
+                min: 0, max: 12   // y-axis to 12 ft
             }
         }
     }
@@ -242,7 +263,7 @@ function getSegmentColor(seg) {
 
 autoScaleToggle.addEventListener("change", () => {
     chart.options.scales.y.min = autoScaleToggle.checked ? undefined : 0;
-    chart.options.scales.y.max = autoScaleToggle.checked ? undefined : 15;
+    chart.options.scales.y.max = autoScaleToggle.checked ? undefined : 12;
     chart.update();
 });
 
