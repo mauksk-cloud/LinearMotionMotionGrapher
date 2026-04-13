@@ -209,15 +209,19 @@ ballPickOverlay.addEventListener("click", (e) => {
     for (let i=0;i<patch.length;i+=4){r+=patch[i];g+=patch[i+1];b+=patch[i+2];n++;}
     r=Math.round(r/n); g=Math.round(g/n); b=Math.round(b/n);
     ballColor = {r,g,b};
+    const hsv = rgbToHsv(r,g,b);
+    ballColor.h = hsv.h;
     ballColorSwatch.style.background = `rgb(${r},${g},${b})`;
-    ballColorLabel.textContent = `rgb(${r},${g},${b})`;
+    ballColorLabel.textContent = `H:${Math.round(hsv.h)}° S:${(hsv.s*100).toFixed(0)}%`;
+    if (hsv.s < 0.25) {
+        ballColorLabel.textContent += ' ⚠ too grey';
+        ballColorLabel.style.color = 'var(--warn)';
+    } else {
+        ballColorLabel.style.color = '';
+    }
     ballPickMode = false;
     ballPickOverlay.classList.remove("visible");
-    // Update tolerance based on how saturated the color is
-    // Bright saturated colors (tennis ball, orange) can use tighter tolerance
-    const maxC = Math.max(r,g,b), minC = Math.min(r,g,b);
-    const saturation = maxC > 0 ? (maxC - minC) / maxC : 0;
-    ballColorTolerance = saturation > 0.5 ? 45 : 35;
+    // Remove old tolerance code — now using HSV hue matching
 });
 
 // ── Window Settings ──
@@ -771,6 +775,27 @@ function calcSlope(t, distFt) {
 }
 
 // ════════════════════════════════════════════════
+// COLOR HELPERS FOR BALL TRACKING
+// ════════════════════════════════════════════════
+function rgbToHsv(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const d = max - min;
+    let h = 0;
+    if (d > 0) {
+        if      (max === r) h = 60 * (((g - b) / d) % 6);
+        else if (max === g) h = 60 * (((b - r) / d) + 2);
+        else                h = 60 * (((r - g) / d) + 4);
+        if (h < 0) h += 360;
+    }
+    return { h, s: max === 0 ? 0 : d / max, v: max };
+}
+
+function rgbToHue(r, g, b) {
+    return rgbToHsv(r, g, b).h;
+}
+
+// ════════════════════════════════════════════════
 // PROCESS VIDEO — Fix for object-fit:cover skew
 // Detection runs on native video resolution.
 // Drawing is remapped to match what the CSS cover crop shows.
@@ -808,52 +833,104 @@ function processVideo() {
     if (ballModeOn && ballColor) {
         const imageData = offCtx.getImageData(0, 0, vw, vh);
         const pixels    = imageData.data;
-        const tol       = ballColorTolerance;
-        const { r: tr, g: tg, b: tb } = ballColor;
 
-        let minX=vw, minY=vh, maxX=0, maxY=0, count=0;
-        // Sample every 3rd pixel for performance
-        for (let py = 0; py < vh; py += 3) {
-            for (let px = 0; px < vw; px += 3) {
+        // Convert target color to HSV hue
+        const targetHue = rgbToHue(ballColor.r, ballColor.g, ballColor.b);
+        const HUE_TOL   = 22;   // ± degrees of hue — robust across lighting changes
+        const SAT_MIN   = 0.25; // ignore washed-out / grey pixels
+        const VAL_MIN   = 0.08; // ignore near-black pixels
+
+        // ── Step 1: build list of matching pixel centers (sampled every 4px for speed) ──
+        const STEP = 4;
+        const matchPts = [];  // {x, y}
+        for (let py = STEP; py < vh - STEP; py += STEP) {
+            for (let px = STEP; px < vw - STEP; px += STEP) {
                 const idx = (py * vw + px) * 4;
-                const dr = Math.abs(pixels[idx]   - tr);
-                const dg = Math.abs(pixels[idx+1] - tg);
-                const db = Math.abs(pixels[idx+2] - tb);
-                if (dr < tol && dg < tol && db < tol) {
-                    if (px < minX) minX = px;
-                    if (px > maxX) maxX = px;
-                    if (py < minY) minY = py;
-                    if (py > maxY) maxY = py;
-                    count++;
+                const r = pixels[idx], g = pixels[idx+1], b = pixels[idx+2];
+                const { h, s, v } = rgbToHsv(r, g, b);
+                if (s < SAT_MIN || v < VAL_MIN) continue;
+                // Hue is circular — check both directions
+                let hueDiff = Math.abs(h - targetHue);
+                if (hueDiff > 180) hueDiff = 360 - hueDiff;
+                if (hueDiff <= HUE_TOL) matchPts.push({ x: px, y: py });
+            }
+        }
+
+        // ── Step 2: find the densest cluster using a sliding window ──
+        // Divide frame into grid cells, count matches per cell, find hottest region
+        const CELL = Math.round(Math.min(vw, vh) * 0.12); // ~12% of frame dimension
+        let bestCount = 0, bestCx = 0, bestCy = 0;
+        // Build a quick 2D accumulator
+        const gw = Math.ceil(vw / CELL), gh = Math.ceil(vh / CELL);
+        const grid = new Int16Array(gw * gh);
+        for (const pt of matchPts) {
+            const gx = Math.floor(pt.x / CELL);
+            const gy = Math.floor(pt.y / CELL);
+            // Accumulate into a 3x3 neighbourhood for smooth peaks
+            for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const nx = gx + dx, ny = gy + dy;
+                    if (nx >= 0 && nx < gw && ny >= 0 && ny < gh) {
+                        grid[ny * gw + nx]++;
+                    }
+                }
+            }
+        }
+        for (let gy = 0; gy < gh; gy++) {
+            for (let gx = 0; gx < gw; gx++) {
+                const cnt = grid[gy * gw + gx];
+                if (cnt > bestCount) {
+                    bestCount = cnt;
+                    bestCx = (gx + 0.5) * CELL;
+                    bestCy = (gy + 0.5) * CELL;
                 }
             }
         }
 
-        const blobArea = (maxX - minX) * (maxY - minY);
-        if (count > 60 && blobArea > 100) {
-            // Diameter estimate: average of width and height of bounding box
+        // ── Step 3: refine — measure the tight bounding box of matches near the best center ──
+        const REFINE_R = CELL * 2.5;  // only look at points within 2.5 cells of the peak
+        let minX = vw, maxX = 0, minY = vh, maxY = 0, clusterCount = 0;
+        for (const pt of matchPts) {
+            const dx = pt.x - bestCx, dy = pt.y - bestCy;
+            if (dx*dx + dy*dy <= REFINE_R * REFINE_R) {
+                if (pt.x < minX) minX = pt.x;
+                if (pt.x > maxX) maxX = pt.x;
+                if (pt.y < minY) minY = pt.y;
+                if (pt.y > maxY) maxY = pt.y;
+                clusterCount++;
+            }
+        }
+
+        // Need a reasonable number of clustered pixels to declare a detection
+        const MIN_CLUSTER = Math.max(8, Math.round((REFINE_R / STEP) * 0.15));
+        if (clusterCount >= MIN_CLUSTER && (maxX - minX) > 4) {
             const diamPx = ((maxX - minX) + (maxY - minY)) / 2;
+            const cxN    = (minX + maxX) / 2;
+            const cyN    = (minY + maxY) / 2;
             lastKnownPixelWidth = diamPx;
-            const realDiam = parseFloat(ballDiameterInput.value) || 6.5;
+            const realDiam = parseFloat(ballDiameterInput.value) || 8.0;
             const distCm   = smooth((realDiam * focalLength) / diamPx);
             const distFt   = distCm / 30.48;
 
-            // Draw bounding circle in display coords
-            const cxN = (minX + maxX) / 2, cyN = (minY + maxY) / 2;
+            // Draw circle in display coordinates
             const dispC = toDisplay(cxN, cyN);
-            const dispR = (diamPx / cropW) * dw / 2;
+            const dispR = Math.max(8, (diamPx / cropW) * dw / 2);
             ctx.strokeStyle = "#ffd740";
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.arc(dispC.x, dispC.y, dispR, 0, Math.PI * 2);
             ctx.stroke();
-            ctx.fillStyle = "rgba(255,215,64,0.15)";
+            ctx.fillStyle = "rgba(255,215,64,0.12)";
             ctx.fill();
-            // Center dot
+            // Crosshair dot
             ctx.beginPath();
             ctx.arc(dispC.x, dispC.y, 5, 0, Math.PI * 2);
             ctx.fillStyle = "#ffd740";
             ctx.fill();
+            // Debug: show match count
+            ctx.fillStyle = "rgba(255,215,64,0.8)";
+            ctx.font = "bold 10px Space Mono, monospace";
+            ctx.fillText(`${clusterCount} pts`, dispC.x + dispR + 4, dispC.y);
 
             distBadge.innerText = distFt.toFixed(2) + " ft";
             const now   = (Date.now() - startTime) / 1000;
@@ -866,15 +943,13 @@ function processVideo() {
                     stopRecording();
                 } else if (t - lastRecordTime >= 0.05) {
                     lastRecordTime = t;
-                    const tVal = parseFloat(t.toFixed(2));
-                    const dVal = parseFloat(distFt.toFixed(3));
-                    data.push([tVal, dVal]);
-                    chart.data.datasets[0].data.push({ x: tVal, y: dVal });
+                    data.push([parseFloat(t.toFixed(2)), parseFloat(distFt.toFixed(3))]);
+                    chart.data.datasets[0].data.push({ x: parseFloat(t.toFixed(2)), y: parseFloat(distFt.toFixed(3)) });
                     chart.update('none');
                 }
             }
         } else {
-            distBadge.innerText = ballColor ? "No ball found" : "Pick a color";
+            distBadge.innerText = "No ball found";
             videoWrapper.classList.remove('slope-pos','slope-neg','slope-zero');
         }
         requestAnimationFrame(processVideo);
